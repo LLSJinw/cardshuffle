@@ -1,86 +1,98 @@
-# card_backs.py
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
-import numpy as np, math, os
+# streamlit_app.py
+# Minimal demo: flip a card, then zoom that exact card. Close Zoom is a normal button.
 
-# --- paths ---
-OWL = "images/owl.png"
-OUT = "out_backs"
-os.makedirs(OUT, exist_ok=True)
+import base64, io, textwrap
+import streamlit as st
+from PIL import Image, ImageDraw, ImageOps, ImageFont
 
-# --- card size & style ---
-W, H, R = 900, 1400, 64  # px
-NAVY=(16,34,64); MID=(35,56,102)
-DARKG=(72,78,92); GREY=(208,213,221)
-WHITE=(250,252,255); SILVER=(224,228,236)
+st.set_page_config(page_title="Zoom Test", page_icon="🔎", layout="wide")
 
-def radial_grad(size, inner, outer):
-    w,h=size; cx,cy=w//2,h//2; md=max(w,h)
-    arr=np.zeros((h,w,3),dtype=np.uint8)
-    for y in range(h):
-        for x in range(w):
-            t=min(1.0, math.hypot(x-cx,y-cy)/md)
-            arr[y,x]=(int(inner[0]*(1-t)+outer[0]*t),
-                      int(inner[1]*(1-t)+outer[1]*t),
-                      int(inner[2]*(1-t)+outer[2]*t))
-    return Image.fromarray(arr,'RGB')
+CARD_W, CARD_H = 360, 540
 
-def rounded_mask(w,h,r):
-    m=Image.new("L",(w,h),0); d=ImageDraw.Draw(m)
-    d.rounded_rectangle([0,0,w-1,h-1], r, fill=255); return m
+# ----- helpers -----
+def get_font(size: int):
+    try:
+        return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
 
-def subtle_diagonal(size, spacing=48, alpha=20):
-    img=Image.new("RGBA", size, (0,0,0,0)); d=ImageDraw.Draw(img)
-    for x in range(-size[1], size[0]+size[1], spacing):
-        d.line([(x,0),(x+size[1],size[1])], fill=(255,255,255,alpha), width=2)
+def make_back()->Image.Image:
+    NAVY=(16,34,64); WHITE=(248,251,255)
+    img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
+    d = ImageDraw.Draw(img)
+    for x in range(-CARD_H, CARD_W+CARD_H, 36):
+        d.line([(x,0),(x+CARD_H,CARD_H)], fill=(255,255,255,32), width=2)
+    d.text((CARD_W//2, CARD_H//2-40), "🦉", anchor="mm", fill=WHITE)
+    img = ImageOps.expand(img, border=8, fill=(240,244,252))
+    img = ImageOps.expand(img, border=3, fill=(220,226,236))
     return img
 
-def add_border(card):
-    return ImageOps.expand(ImageOps.expand(card, border=26, fill=WHITE), border=6, fill=SILVER)
+def make_front(label:str, subtitle:str)->Image.Image:
+    NAVY=(16,34,64); STRIPE=(208,213,221); LIGHT=(236,240,248)
+    img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, int(CARD_H*0.16), CARD_W, int(CARD_H*0.19)], fill=STRIPE)
+    d.rectangle([0, int(CARD_H*0.72), CARD_W, int(CARD_H*0.75)], fill=STRIPE)
+    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=get_font(72))
+    txt = textwrap.fill(subtitle, width=22)
+    d.multiline_text((CARD_W//2, int(CARD_H*0.55)), txt, anchor="mm", fill=LIGHT, font=get_font(24), align="center")
+    img = ImageOps.expand(img, border=8, fill=(240,244,252))
+    img = ImageOps.expand(img, border=3, fill=(220,226,236))
+    return img
 
-def center_logo(canvas, logo, scale=0.55, y_offset=0):
-    w=int(canvas.width*scale); r=w/logo.width; nh=int(logo.height*r)
-    logo_r=logo.resize((w,nh), Image.LANCZOS)
-    x=(canvas.width-w)//2; y=int((canvas.height-nh)//2 + y_offset)
-    layer=Image.new("RGBA", canvas.size, (0,0,0,0))
-    # soft white outline for contrast
-    alpha=logo_r.split()[-1]
-    outline=alpha.filter(ImageFilter.MaxFilter(13))
-    glow=Image.new("RGBA", logo_r.size, (255,255,255,170)); glow.putalpha(outline)
-    layer.alpha_composite(glow,(x,y)); layer.alpha_composite(logo_r,(x,y))
-    return Image.alpha_composite(canvas, layer)
+def pil_to_b64(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
-# load owl
-owl = Image.open(OWL).convert("RGBA")
-mask = rounded_mask(W,H,R)
+# ----- state -----
+if "cards" not in st.session_state:
+    back_b64 = pil_to_b64(make_back())
+    demo = [("Q1","Activate CIRP?"), ("Q2","First containment?"), ("Q3","HR calm comms?")]
+    st.session_state.cards = []
+    for q, sub in demo:
+        st.session_state.cards.append({
+            "id": q,
+            "front": pil_to_b64(make_front(q, sub)),
+            "back": back_b64,
+            "flipped": False,
+        })
+    st.session_state.zoom_index = None  # None or int
 
-# --- 1) MONO ---
-bg = radial_grad((W,H), inner=MID, outer=NAVY).convert("RGBA")
-bg = Image.alpha_composite(bg, subtle_diagonal((W,H), spacing=48, alpha=18))
-mono = Image.new("RGBA",(W,H),(0,0,0,0)); mono.paste(bg,(0,0),mask)
-mono = center_logo(mono, owl, scale=0.5, y_offset=-30)
-d = ImageDraw.Draw(mono)
-d.rounded_rectangle([80,H-180,W-80,H-130], radius=20, fill=(255,255,255,42),
-                    outline=(255,255,255,90), width=2)
-mono = add_border(mono); mono.save(os.path.join(OUT, "card_back_mono.png"))
+def flip(i:int):
+    st.session_state.cards[i]["flipped"] = True
 
-# --- 2) DUO ---
-bg = Image.new("RGBA",(W,H), NAVY); d2=ImageDraw.Draw(bg)
-d2.polygon([(0,int(H*0.55)),(W,int(H*0.35)),(W,H),(0,H)], fill=DARKG)
-bg = Image.alpha_composite(bg, subtle_diagonal((W,H), spacing=56, alpha=22))
-duo = Image.new("RGBA",(W,H),(0,0,0,0)); duo.paste(bg,(0,0),mask)
-duo = center_logo(duo, owl, scale=0.56, y_offset=-20)
-shine = Image.new("RGBA",(W,H),(255,255,255,0)); ds=ImageDraw.Draw(shine)
-ds.ellipse([-200,-500,W+200,600], fill=(255,255,255,18))
-duo = Image.alpha_composite(duo, shine)
-duo = add_border(duo); duo.save(os.path.join(OUT, "card_back_duo.png"))
+def open_zoom(i:int):
+    st.session_state.zoom_index = i
 
-# --- 3) TRI-TONE ---
-bg = radial_grad((W,H), inner=(28,51,96), outer=NAVY).convert("RGBA")
-tri = Image.new("RGBA",(W,H),(0,0,0,0)); tri.paste(bg,(0,0),mask)
-d3=ImageDraw.Draw(tri); sh=46
-d3.rectangle([0, int(H*0.68), W, int(H*0.68)+sh], fill=GREY+(255,))
-d3.rectangle([0, int(H*0.68)+sh+16, W, int(H*0.68)+sh*2+16], fill=WHITE+(255,))
-tri = center_logo(tri, owl, scale=0.54, y_offset=-60)
-tri = add_border(tri); tri.save(os.path.join(OUT, "card_back_tritone.png"))
+def close_zoom():
+    st.session_state.zoom_index = None
 
-print("Done → check the 'out_backs' folder.")
+# ----- layout -----
+st.title("Card Zoom – Minimal Proof")
+
+cols = st.columns(3)
+for i, col in enumerate(cols):
+    with col:
+        card = st.session_state.cards[i]
+        img_b64 = card["front"] if card["flipped"] else card["back"]
+        st.image(f"data:image/png;base64,{img_b64}", use_container_width=True)
+        bcols = st.columns(2)
+        with bcols[0]:
+            st.button("Flip", key=f"flip_{i}", on_click=flip, args=(i,), disabled=card["flipped"], use_container_width=True)
+        with bcols[1]:
+            st.button("Zoom", key=f"zoom_{i}", on_click=open_zoom, args=(i,), disabled=not card["flipped"], use_container_width=True)
+
+# ----- zoom overlay -----
+# No JS. Just a normal Streamlit container at the bottom that shows a big image + Close button.
+if st.session_state.zoom_index is not None:
+    st.markdown("---")
+    st.subheader("🔎 Zoomed Card")
+    idx = st.session_state.zoom_index
+    card = st.session_state.cards[idx]
+    big = Image.open(io.BytesIO(base64.b64decode(card["front"])))
+    # upscale for presentation
+    scale = st.slider("Zoom", 1.0, 2.0, 1.6, 0.1, help="Adjust on the fly")
+    big_resized = big.resize((int(CARD_W*scale), int(CARD_H*scale)))
+    st.image(big_resized, use_column_width=False)
+    st.button("✕ Close Zoom", on_click=close_zoom, type="primary")
