@@ -1,18 +1,15 @@
 # streamlit_app.py
-# Two-team TTX demo with 4 phases (3 cards each), "pick 2 of 3" per phase,
-# flip animation, and zoom-on-click for flipped cards.
+# Phased TTX deck with two teams, flip/zoom, and admin controls for phase limits.
 
 import base64, io, random, textwrap
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
 
 # --------------------- layout / style ---------------------
-CARD_W, CARD_H, R = 360, 540, 24
-FONT_SIZE_BIG = 72
-FONT_SIZE_SMALL = 26
+CARD_W, CARD_H = 360, 540  # size used for generated PNGs
 TEAMS = ["Team A", "Team B"]
 
 PHASES = {
@@ -38,7 +35,7 @@ STORY = {
     "Q12": "Wildcard: Chaos card / random constraint",
 }
 
-# ------------- helper: card image generation -------------
+# --------------------- image generation ---------------------
 def get_font(size: int):
     try:
         return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
@@ -49,12 +46,9 @@ def draw_card_back() -> Image.Image:
     NAVY=(16,34,64); WHITE=(248,251,255)
     img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
     d = ImageDraw.Draw(img)
-    # diagonal lines
     for x in range(-CARD_H, CARD_W+CARD_H, 36):
         d.line([(x,0),(x+CARD_H,CARD_H)], fill=(255,255,255,32), width=2)
-    # owl emoji
     d.text((CARD_W//2, CARD_H//2-40), "🦉", anchor="mm", fill=WHITE)
-    # border bands
     img = ImageOps.expand(img, border=8, fill=(240,244,252))
     img = ImageOps.expand(img, border=3, fill=(220,226,236))
     return img
@@ -63,54 +57,48 @@ def draw_front(label: str, subtitle: str) -> Image.Image:
     NAVY=(16,34,64); STRIPE=(208,213,221); LIGHT=(236,240,248)
     img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
     d = ImageDraw.Draw(img)
-    # stripes
     d.rectangle([0, int(CARD_H*0.16), CARD_W, int(CARD_H*0.19)], fill=STRIPE)
     d.rectangle([0, int(CARD_H*0.72), CARD_W, int(CARD_H*0.75)], fill=STRIPE)
-    # label
-    f_big = get_font(FONT_SIZE_BIG)
-    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=f_big)
-    # subtitle
-    f_small = get_font(FONT_SIZE_SMALL)
+    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=get_font(72))
     wrapped = textwrap.fill(subtitle, width=22)
     d.multiline_text((CARD_W//2, int(CARD_H*0.55)), wrapped, anchor="mm",
-                     fill=LIGHT, font=f_small, align="center")
-    # border
+                     fill=LIGHT, font=get_font(26), align="center")
     img = ImageOps.expand(img, border=8, fill=(240,244,252))
     img = ImageOps.expand(img, border=3, fill=(220,226,236))
     return img
 
-def pil_to_b64(img: Image.Image) -> str:
+def pil_to_b64(img) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 # --------------------- state init ---------------------
 def init():
-    if "cards" in st.session_state: return
+    if "cards" in st.session_state:
+        return
     back_b64 = pil_to_b64(draw_card_back())
-    cards = {}
+    cards: Dict[str, List[Dict]] = {}
     for ph, ids in PHASES.items():
-        ids = ids[:]                 # copy
-        random.shuffle(ids)          # randomize within phase (optional)
+        ids = ids[:]
+        random.shuffle(ids)
         phase_cards = []
         for qid in ids:
-            front_b64 = pil_to_b64(draw_front(qid, STORY.get(qid, "")))
             phase_cards.append({
                 "id": qid,
-                "front": front_b64,
+                "front": pil_to_b64(draw_front(qid, STORY.get(qid, ""))),
                 "back": back_b64,
                 "flipped": False,
-                "owner": None,       # Team A / Team B
+                "owner": None,  # Team A / Team B
             })
         cards[ph] = phase_cards
     st.session_state.cards = cards
-    st.session_state.turn = 0                 # 0 = Team A, 1 = Team B
+    st.session_state.turn = 0
     st.session_state.score = {t: 0 for t in TEAMS}
-    st.session_state.zoom = None              # (phase, idx) or None
+    st.session_state.zoom: Tuple[str,int] | None = None
 
 init()
 
-# --------------------- actions ---------------------
+# --------------------- admin & helpers ---------------------
 def reset_all():
     st.session_state.pop("cards", None)
     init()
@@ -122,13 +110,13 @@ def shuffle_unflipped_in_phase(phase_name: str):
     random.shuffle(unflipped)
     st.session_state.cards[phase_name] = flipped + unflipped
 
-def can_flip(phase_name: str) -> bool:
+def can_flip(phase_name: str, enforce: bool, limit: int, reveal_all: bool) -> bool:
+    if not enforce or limit == 0 or reveal_all:
+        return True
     pcs = st.session_state.cards[phase_name]
-    return sum(c["flipped"] for c in pcs) < 2
+    return sum(c["flipped"] for c in pcs) < limit
 
 def flip_card(phase_name: str, idx: int):
-    if not can_flip(phase_name):
-        return
     card = st.session_state.cards[phase_name][idx]
     if card["flipped"]:
         return
@@ -139,12 +127,9 @@ def flip_card(phase_name: str, idx: int):
     st.session_state.turn = 1 - st.session_state.turn
 
 def toggle_zoom(phase_name: str, idx: int):
-    if st.session_state.zoom == (phase_name, idx):
-        st.session_state.zoom = None
-    else:
-        st.session_state.zoom = (phase_name, idx)
+    st.session_state.zoom = None if st.session_state.zoom == (phase_name, idx) else (phase_name, idx)
 
-# --------------------- CSS for flip ---------------------
+# --------------------- CSS for flip & zoom ---------------------
 st.markdown("""
 <style>
 .card-container { perspective: 1000px; }
@@ -160,35 +145,57 @@ st.markdown("""
 .card-front { transform: rotateY(0deg); }
 .card-back  { transform: rotateY(180deg); }
 .img-fit { width: 100%; height: 100%; object-fit: cover; }
+
+/* zoom overlay */
 .zoom-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
   display: flex; align-items: center; justify-content: center; z-index: 9999;
 }
-.zoom-card { width: min(60vw, 600px); }
+.zoom-card { width: min(64vw, 680px); border-radius: 14px; overflow: hidden; }
+.zoom-close {
+  position: fixed; top: 22px; right: 26px; z-index: 10000;
+  background: #ffffff; color: #333; border: 0; padding: 10px 14px;
+  border-radius: 8px; cursor: pointer; font-weight: 600;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# --------------------- header / controls ---------------------
-left, mid, right = st.columns([1.3, 1.8, 1.3])
-with left:
-    st.subheader("Teams & Turn")
-    st.markdown(f"**Current Turn:** {TEAMS[st.session_state.turn]}")
-    st.write("**Score**")
-    for t in TEAMS: st.write(f"- {t}: {st.session_state.score[t]}")
-    st.button("🔄 Reset All", on_click=reset_all, use_container_width=True)
+# --------------------- SIDEBAR: Admin + Teams ---------------------
+with st.sidebar:
+    st.header("Admin / Demo Controls")
+    enforce_limit = st.checkbox("Enforce phase limit", value=True)
+    limit_per_phase = st.number_input("Limit per phase (0 = unlimited)", min_value=0, max_value=3, value=2, step=1)
+    st.caption("Tip: set 0 or toggle off to allow opening the 3rd card for fun.")
 
-with right:
-    st.subheader("Phase Tools")
+    st.markdown("---")
+    st.subheader("Per-Phase Override")
+    phase_reveal_flags: Dict[str, bool] = {}
     for ph in PHASES:
-        st.button(f"🔀 Shuffle Unflipped – {ph}", key=f"shuf_{ph}", on_click=shuffle_unflipped_in_phase, args=(ph,), use_container_width=True)
+        phase_reveal_flags[ph] = st.checkbox(f"Reveal all in {ph}", value=False, key=f"reveal_{ph}")
+    st.markdown("---")
+    st.button("🔄 Reset All", on_click=reset_all, use_container_width=True)
+    for ph in PHASES:
+        st.button(f"🔀 Shuffle Unflipped – {ph}", on_click=shuffle_unflipped_in_phase,
+                  args=(ph,), use_container_width=True, key=f"shuf_{ph}")
 
-# --------------------- phases grid ---------------------
-st.markdown("---")
-for phase_name, plist in PHASES.items():
-    st.subheader(f"{phase_name}  ·  Pick 2 of 3")
+    st.markdown("---")
+    st.header("Teams & Score")
+    st.write(f"**Current Turn:** {TEAMS[st.session_state.turn]}")
+    for t in TEAMS:
+        st.write(f"- {t}: {st.session_state.score[t]}")
+
+# --------------------- MAIN: Phases grid ---------------------
+st.title("Phased TTX Card Deck")
+st.caption("Flip any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card to present it fullscreen.")
+
+for phase_name, ids in PHASES.items():
+    st.subheader(f"{phase_name}  ·  Pick {limit_per_phase if limit_per_phase>0 else '∞'} of 3")
     pcs = st.session_state.cards[phase_name]
     picked = sum(c["flipped"] for c in pcs)
-    st.caption(f"Selected: {picked}/2")
+    if enforce_limit and limit_per_phase > 0 and not phase_reveal_flags[phase_name]:
+        st.caption(f"Selected: {picked}/{limit_per_phase}")
+    else:
+        st.caption(f"Selected: {picked}/∞ (limit disabled)")
 
     cols = st.columns(3)
     for i, col in enumerate(cols):
@@ -196,10 +203,10 @@ for phase_name, plist in PHASES.items():
             card = pcs[i]
             front = f"data:image/png;base64,{card['front']}"
             back  = f"data:image/png;base64,{card['back']}"
-            flipped = "flipped" if card["flipped"] else ""
-            html = f"""
+            flipped_class = "flipped" if card["flipped"] else ""
+            st.markdown(f"""
             <div class="card-container">
-              <div class="card {flipped}">
+              <div class="card {flipped_class}">
                 <div class="card-inner">
                   <div class="card-face card-front">
                     <img class="img-fit" src="{back}"/>
@@ -209,17 +216,19 @@ for phase_name, plist in PHASES.items():
                   </div>
                 </div>
               </div>
-            </div>"""
-            st.markdown(html, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
-            row1 = st.columns(2)
-            with row1[0]:
-                disabled = (not can_flip(phase_name)) or card["flipped"]
+            btn_cols = st.columns(2)
+            with btn_cols[0]:
+                flip_disabled = card["flipped"] or not can_flip(
+                    phase_name, enforce_limit, limit_per_phase, phase_reveal_flags[phase_name]
+                )
                 st.button("Flip", key=f"flip_{phase_name}_{i}", on_click=flip_card,
-                          args=(phase_name,i), disabled=disabled, use_container_width=True)
-            with row1[1]:
+                          args=(phase_name, i), disabled=flip_disabled, use_container_width=True)
+            with btn_cols[1]:
                 st.button("Zoom", key=f"zoom_{phase_name}_{i}", on_click=toggle_zoom,
-                          args=(phase_name,i), disabled=not card["flipped"], use_container_width=True)
+                          args=(phase_name, i), disabled=not card["flipped"], use_container_width=True)
 
             if card["flipped"]:
                 st.success(f"{card['id']} → {card['owner']}")
@@ -227,31 +236,43 @@ for phase_name, plist in PHASES.items():
 
     st.markdown("---")
 
-# --------------------- zoom overlay ---------------------
+# --------------------- ZOOM OVERLAY ---------------------
 if st.session_state.zoom is not None:
     ph, idx = st.session_state.zoom
     card = st.session_state.cards[ph][idx]
     img_b64 = card["front"] if card["flipped"] else card["back"]
+
+    # Close button (always visible)
+    st.markdown("""
+    <button class="zoom-close" onclick="window.parent.postMessage('close-zoom', '*')">✕ Close</button>
+    """, unsafe_allow_html=True)
+
+    # Overlay that closes on click
     st.markdown(f"""
     <div class="zoom-overlay" onclick="window.parent.postMessage('close-zoom', '*')">
-      <div class="zoom-card">
+      <div class="zoom-card" onclick="event.stopPropagation()">
         <img class="img-fit" src="data:image/png;base64,{img_b64}"/>
       </div>
     </div>
     """, unsafe_allow_html=True)
-    # quick close button as fallback
-    st.button("Close", on_click=lambda: toggle_zoom(ph, idx), type="primary")
 
-# JS to close zoom when clicking overlay
+# JS: close on message + Esc
 st.markdown("""
 <script>
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') window.parent.postMessage('close-zoom', '*');
+});
 window.addEventListener("message", (event) => {
   if (event.data === "close-zoom") {
-    const btns = parent.document.querySelectorAll('button[kind="primary"]');
-    if (btns && btns.length) { btns[0].click(); }
+    const buttons = Array.from(parent.document.querySelectorAll('button'));
+    const closeBtn = buttons.find(b => b.innerText.trim() === 'Close' || b.innerText.includes('Close'));
+    if (closeBtn) closeBtn.click();
   }
 });
 </script>
 """, unsafe_allow_html=True)
 
-st.caption("Tip: replace STORY text with your real injects. Phase limit is enforced (2 of 3).")
+# fallback Streamlit close button (programmatically clicked by JS)
+if st.session_state.zoom is not None:
+    ph, idx = st.session_state.zoom
+    st.button("Close", on_click=lambda: toggle_zoom(ph, idx), key="close_fallback", type="primary")
