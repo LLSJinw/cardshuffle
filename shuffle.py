@@ -1,160 +1,258 @@
 # streamlit_app.py
+# Demo deck with flip animation, two-team turns, and basic story prompts
+# Dependencies: streamlit, pillow (usually preinstalled in Streamlit cloud)
+import base64
 import io
-import math
-from typing import Tuple
+import random
+import textwrap
+from typing import List, Dict, Tuple
 
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-st.set_page_config(page_title="Card Back Generator", page_icon="🦉", layout="centered")
+st.set_page_config(page_title="TTX Card Deck Demo", page_icon="🃏", layout="wide")
 
-# --- Palette (navy / grey / white) ---
-NAVY  = (16, 34, 64)
-MID   = (35, 56, 102)
-DARKG = (72, 78, 92)
-GREY  = (208, 213, 221)
-WHITE = (250, 252, 255)
-SILVER= (224, 228, 236)
+# --------------------------- CONFIG ---------------------------
+CARD_W, CARD_H, R = 360, 540, 24     # card size
+DECK_SIZE = 12                       # number of cards
+TEAMS = ["Team A", "Team B"]         # two teams
+FONT_SIZE_BIG = 72
+FONT_SIZE_SMALL = 26
 
-# ---------------- helpers ----------------
+# Simple mapping: Q1..Q12 -> short prompt (replace with your inject text later)
+STORY: Dict[str, str] = {
+    "Q1":  "Strategic: Activate CIRP immediately?",
+    "Q2":  "Tactical: First containment action?",
+    "Q3":  "Operational: HR calm comms?",
+    "Q4":  "Strategic: Partner notification timing?",
+    "Q5":  "Tactical: Isolate repos/servers?",
+    "Q6":  "Operational: Contact center script?",
+    "Q7":  "Strategic: Ransom stance (LE & backups)?",
+    "Q8":  "Tactical: Verify backup integrity first?",
+    "Q9":  "Operational: Staff breach notice guidance?",
+    "Q10": "Strategic: Improve CIRP + BCP?",
+    "Q11": "Tactical: Backup test + EDR + awareness?",
+    "Q12": "Wildcard: Chaos card / random constraint",
+}
+
+# --------------------------- IMAGE GEN ---------------------------
 def rounded_mask(w: int, h: int, r: int) -> Image.Image:
     m = Image.new("L", (w, h), 0)
     d = ImageDraw.Draw(m)
     d.rounded_rectangle([0, 0, w-1, h-1], r, fill=255)
     return m
 
-def radial_gradient(size: Tuple[int,int], inner: Tuple[int,int,int], outer: Tuple[int,int,int]) -> Image.Image:
-    """PIL-only radial gradient (no numpy). Optimized with bands, good enough for UI."""
-    w, h = size
-    img = Image.new("RGB", size, outer)
-    draw = ImageDraw.Draw(img)
-    cx, cy = w//2, h//2
-    # draw concentric circles from center outward
-    max_r = int(math.hypot(cx, cy))
-    steps = 220  # higher = smoother
-    for i in range(steps, -1, -1):
-        t = i/steps
-        col = (
-            int(inner[0]*t + outer[0]*(1-t)),
-            int(inner[1]*t + outer[1]*(1-t)),
-            int(inner[2]*t + outer[2]*(1-t)),
-        )
-        r = int(max_r * t)
-        bbox = [cx-r, cy-r, cx+r, cy+r]
-        draw.ellipse(bbox, fill=col)
-    return img
-
-def subtle_diagonal(size: Tuple[int,int], spacing=48, alpha=22) -> Image.Image:
-    w, h = size
-    img = Image.new("RGBA", size, (0,0,0,0))
+def draw_card_back() -> Image.Image:
+    """Create a simple navy/grey/white card back."""
+    NAVY=(16,34,64); MID=(36,58,104); WHITE=(248, 251, 255)
+    img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
     d = ImageDraw.Draw(img)
-    for x in range(-h, w+h, spacing):
-        d.line([(x,0),(x+h,h)], fill=(255,255,255,alpha), width=2)
+    # diagonal lines
+    for x in range(-CARD_H, CARD_W+CARD_H, 36):
+        d.line([(x,0),(x+CARD_H,CARD_H)], fill=(255,255,255,32), width=2)
+    # center '🦉'
+    try:
+        # fallback emoji render via text
+        d.text((CARD_W//2, CARD_H//2-40), "🦉", anchor="mm", fill=WHITE, align="center", font=None)
+    except Exception:
+        pass
+    # band
+    d.rectangle([0, int(CARD_H*0.72), CARD_W, int(CARD_H*0.78)], fill=(230,236,246))
+    # rounded mask & white border
+    img = ImageOps.expand(img, border=8, fill=(240,244,252))
+    img = ImageOps.expand(img, border=3, fill=(220,226,236))
     return img
 
-def add_border(card: Image.Image) -> Image.Image:
-    card = ImageOps.expand(card, border=26, fill=WHITE)
-    card = ImageOps.expand(card, border=6, fill=SILVER)
-    return card
+def get_font(size: int):
+    # Streamlit environments often don't have TTF paths; none uses default bitmap font.
+    try:
+        return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
 
-def center_logo(canvas: Image.Image, logo: Image.Image, scale=0.55, y_offset=0) -> Image.Image:
-    w = int(canvas.width * scale)
-    r = w / logo.width
-    nh = int(logo.height * r)
-    logo_r = logo.resize((w, nh), Image.LANCZOS)
+def draw_front(label: str, subtitle: str) -> Image.Image:
+    """Generate a simple front image: large Q label + small subtitle wrap."""
+    NAVY=(16,34,64); LIGHT=(236, 240, 248); STRIPE=(208, 213, 221)
+    img = Image.new("RGB", (CARD_W, CARD_H), NAVY)
+    d = ImageDraw.Draw(img)
 
-    # soft white outline for contrast
-    alpha = logo_r.split()[-1] if logo_r.mode == "RGBA" else Image.new("L", logo_r.size, 255)
-    outline = alpha.filter(ImageFilter.MaxFilter(13))
-    glow = Image.new("RGBA", logo_r.size, (255,255,255,170))
-    glow.putalpha(outline)
+    # stripes
+    d.rectangle([0, int(CARD_H*0.16), CARD_W, int(CARD_H*0.19)], fill=STRIPE)
+    d.rectangle([0, int(CARD_H*0.72), CARD_W, int(CARD_H*0.75)], fill=STRIPE)
 
-    layer = Image.new("RGBA", canvas.size, (0,0,0,0))
-    x = (canvas.width - w)//2
-    y = int((canvas.height - nh)//2 + y_offset)
-    layer.alpha_composite(glow, (x,y))
-    layer.alpha_composite(logo_r.convert("RGBA"), (x,y))
-    return Image.alpha_composite(canvas.convert("RGBA"), layer)
+    # label
+    f_big = get_font(FONT_SIZE_BIG)
+    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=f_big)
 
-def to_download_bytes(img: Image.Image, filename: str):
+    # subtitle wrapped
+    f_small = get_font(FONT_SIZE_SMALL)
+    wrapped = textwrap.fill(subtitle, width=22)
+    d.multiline_text((CARD_W//2, int(CARD_H*0.55)), wrapped, anchor="mm", fill=LIGHT, font=f_small, align="center")
+
+    # subtle border
+    img = ImageOps.expand(img, border=8, fill=(240,244,252))
+    img = ImageOps.expand(img, border=3, fill=(220,226,236))
+    return img
+
+def pil_to_base64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    st.download_button("⬇️ Download " + filename, data=buf.getvalue(), file_name=filename, mime="image/png")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
-# ---------------- UI ----------------
-st.title("🦉 Card Back Generator")
-st.caption("Palette: navy · grey · white")
+# --------------------------- STATE ---------------------------
+def init_state():
+    if "deck" not in st.session_state:
+        # Create deck Q1..Q12
+        labels = [f"Q{i}" for i in range(1, DECK_SIZE+1)]
+        # fronts/backs as base64
+        back = draw_card_back()
+        back_b64 = pil_to_base64(back)
 
-colA, colB = st.columns([1,1])
-with colA:
-    uploaded = st.file_uploader("Upload your owl/logo (PNG with transparency preferred)", type=["png","jpg","jpeg"])
-with colB:
-    W = st.slider("Card width (px)", 480, 1200, 900, 60)
-    aspect = st.selectbox("Aspect ratio", ["2:3 (portrait)", "3:5 (tall portrait)"], index=0)
-    if aspect == "2:3 (portrait)":
-        H = int(W * 3/2)
+        cards = []
+        for lab in labels:
+            front = draw_front(lab, STORY.get(lab, ""))
+            front_b64 = pil_to_base64(front)
+            cards.append({
+                "id": lab,
+                "front_b64": front_b64,
+                "back_b64": back_b64,
+                "flipped": False,
+                "owner": None,         # "Team A" | "Team B" once flipped
+            })
+
+        random.shuffle(cards)
+        st.session_state.deck = cards
+        st.session_state.turn = 0           # 0 = Team A, 1 = Team B
+        st.session_state.score = {t: 0 for t in TEAMS}
+        st.session_state.log: List[str] = []
+
+init_state()
+
+# --------------------------- ACTIONS ---------------------------
+def reset_deck():
+    st.session_state.pop("deck", None)
+    init_state()
+
+def shuffle_unflipped():
+    # shuffle positions of unflipped cards
+    deck = st.session_state.deck
+    unflipped = [c for c in deck if not c["flipped"]]
+    random.shuffle(unflipped)
+    st.session_state.deck = [c for c in deck if c["flipped"]] + unflipped
+
+def flip_card(idx: int):
+    card = st.session_state.deck[idx]
+    if card["flipped"]:
+        return
+    team = TEAMS[st.session_state.turn]
+    card["flipped"] = True
+    card["owner"] = team
+    st.session_state.score[team] += 1
+    st.session_state.turn = 1 - st.session_state.turn
+    st.session_state.log.append(f'{team} flipped {card["id"]}: {STORY.get(card["id"], "")}')
+
+# --------------------------- UI ---------------------------
+st.markdown(
+    """
+    <style>
+    .card-container { perspective: 1000px; }
+    .card {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      position: relative;
+    }
+    .card-inner {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.6s ease;
+    }
+    .flipped .card-inner { transform: rotateY(180deg); }
+    .card-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-front { transform: rotateY(0deg); }
+    .card-back  { transform: rotateY(180deg); }
+    .img-fit { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+left, mid, right = st.columns([1.2, 2.4, 1.2], gap="large")
+
+with left:
+    st.subheader("Teams & Turns")
+    st.markdown(f"**Current Turn:** {TEAMS[st.session_state.turn]}")
+    st.write("**Score**")
+    for t in TEAMS:
+        st.write(f"- {t}: {st.session_state.score[t]}")
+    st.button("🔄 Reset Deck", on_click=reset_deck, use_container_width=True)
+    st.button("🔀 Shuffle Unflipped", on_click=shuffle_unflipped, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("How to play")
+    st.markdown(
+        """
+        1. Teams take turns.  
+        2. Click **Flip** on any facedown card.  
+        3. The flipped card is assigned to the team on turn.  
+        4. Discuss the prompt shown on the card (your real inject).  
+        5. Use the scoreboard to keep track of progress.  
+        """
+    )
+
+with right:
+    st.subheader("Event Log")
+    if st.session_state.log:
+        for ln in reversed(st.session_state.log[-20:]):
+            st.write("•", ln)
     else:
-        H = int(W * 5/3)
-R = 48 if W <= 700 else 64
+        st.caption("No flips yet.")
 
-if not uploaded:
-    st.info("Upload your owl logo to generate the card backs.")
-    st.stop()
+with mid:
+    st.subheader("Deck")
+    deck = st.session_state.deck
 
-# load owl
-owl = Image.open(uploaded).convert("RGBA")
+    # render grid (4 x 3)
+    rows = [deck[i:i+4] for i in range(0, len(deck), 4)]
+    for r, row in enumerate(rows):
+        cols = st.columns(4)
+        for c, card in enumerate(row):
+            idx = r*4 + c
+            with cols[c]:
+                front = f"data:image/png;base64,{card['front_b64']}"
+                back  = f"data:image/png;base64,{card['back_b64']}"
 
-# common mask
-mask = rounded_mask(W, H, R)
+                flipped_class = "flipped" if card["flipped"] else ""
+                html = f"""
+                <div class="card-container">
+                  <div class="card {flipped_class}">
+                    <div class="card-inner">
+                      <div class="card-face card-front">
+                        <img class="img-fit" src="{back}"/>
+                      </div>
+                      <div class="card-face card-back">
+                        <img class="img-fit" src="{front}"/>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                """
+                st.markdown(html, unsafe_allow_html=True)
 
-# -------- Variant 1: MONO --------
-bg1 = radial_gradient((W,H), inner=MID, outer=NAVY).convert("RGBA")
-bg1.alpha_composite(subtle_diagonal((W,H), spacing=48, alpha=18))
-card1 = Image.new("RGBA",(W,H),(0,0,0,0))
-card1.paste(bg1, (0,0), mask)
-card1 = center_logo(card1, owl, scale=0.5, y_offset=-int(H*0.02))
-d1 = ImageDraw.Draw(card1)
-d1.rounded_rectangle([int(W*0.09), H- int(H*0.13), W- int(W*0.09), H- int(H*0.08)],
-                     radius=20, fill=(255,255,255,42), outline=(255,255,255,90), width=2)
-mono = add_border(card1)
+                if not card["flipped"]:
+                    st.button(f"Flip", key=f"flip_{idx}", on_click=flip_card, args=(idx,), use_container_width=True)
+                else:
+                    st.success(f"{card['id']} → {card['owner']}")
+                    # show the text prompt under the flipped card for quick reference
+                    st.caption(STORY.get(card["id"], ""))
 
-# -------- Variant 2: DUO --------
-bg2 = Image.new("RGBA",(W,H), NAVY)
-d2 = ImageDraw.Draw(bg2)
-d2.polygon([(0,int(H*0.55)), (W,int(H*0.35)), (W,H), (0,H)], fill=DARKG)
-bg2.alpha_composite(subtle_diagonal((W,H), spacing=56, alpha=22))
-card2 = Image.new("RGBA",(W,H),(0,0,0,0))
-card2.paste(bg2, (0,0), mask)
-card2 = center_logo(card2, owl, scale=0.56, y_offset=-int(H*0.02))
-shine = Image.new("RGBA",(W,H),(255,255,255,0))
-ds = ImageDraw.Draw(shine)
-ds.ellipse([-int(W*0.22), -int(H*0.36), int(W*1.22), int(H*0.43)], fill=(255,255,255,18))
-card2 = Image.alpha_composite(card2, shine)
-duo = add_border(card2)
-
-# -------- Variant 3: TRI-TONE --------
-bg3 = radial_gradient((W,H), inner=(28,51,96), outer=NAVY).convert("RGBA")
-card3 = Image.new("RGBA",(W,H),(0,0,0,0))
-card3.paste(bg3, (0,0), mask)
-d3 = ImageDraw.Draw(card3)
-stripe_h = max(36, int(H*0.035))
-d3.rectangle([0, int(H*0.68), W, int(H*0.68)+stripe_h], fill=GREY+(255,))
-d3.rectangle([0, int(H*0.68)+stripe_h+16, W, int(H*0.68)+stripe_h*2+16], fill=WHITE+(255,))
-card3 = center_logo(card3, owl, scale=0.54, y_offset=-int(H*0.04))
-tri = add_border(card3)
-
-# ---------------- show & download ----------------
-st.subheader("Previews")
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.image(mono, caption="Mono", use_column_width=True)
-    to_download_bytes(mono, "card_back_mono.png")
-with c2:
-    st.image(duo, caption="Duo", use_column_width=True)
-    to_download_bytes(duo, "card_back_duo.png")
-with c3:
-    st.image(tri, caption="Tri-Tone", use_column_width=True)
-    to_download_bytes(tri, "card_back_tritone.png")
-
-st.success("Done. Use one of these as the **back** image for all cards in your Streamlit deck.")
-
+st.caption("Demo: generated graphics only. Replace STORY text with your real injects/questions.")
