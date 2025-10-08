@@ -23,6 +23,16 @@ st.markdown(f"""
   background-color: #0e1525 !important;
   color: #fff !important;
 }}
+
+.title-bg {{
+  font-size: 1.8rem;                 /* similar to st.title */
+  font-weight: 800;
+  margin: .25rem 0 .35rem 0;
+  display: inline-block;
+  background: rgba(0,0,0,.50);       /* dark translucent slab */
+  padding: .35rem .65rem;
+  border-radius: 10px;
+}}
 .block-container, header, .st-emotion-cache-18ni7ap, .st-emotion-cache-1v0mbdj {{
   background: transparent !important;
   box-shadow: none !important;
