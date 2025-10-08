@@ -70,7 +70,7 @@ st.markdown(f"""
 }}
 .overlay .cardwrap {{
   max-width: min(90vw, 900px);     /* wider */
-  transform: scale(1.25);          /* +25% zoom */
+  transform: scale(2.00);          /* +25% zoom */
   border-radius: 20px; overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
   pointer-events: auto;
