@@ -1,6 +1,6 @@
 # streamlit_app.py
-# Phased TTX deck with two teams, flip/zoom, and admin controls for phase limits.
-# Production-safe zoom (CSS only) + Sidebar Close button (visible only when zoom is active)
+# Phased TTX deck (2×2 grid), flip/zoom, admin controls.
+# Cards 20% smaller; Zoom ~25% bigger; clean dark UI with background.
 
 import base64, io, random, textwrap
 from typing import Dict, List, Tuple
@@ -9,120 +9,89 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
 
-BG_PATH = "BG.png"  # your 1920x1080 file
-bg_bytes = open(BG_PATH, "rb").read()
-bg_base64 = base64.b64encode(bg_bytes).decode()
+# ---------- Background (1920x1080 recommended) ----------
+BG_PATH = "BG.png"
+with open(BG_PATH, "rb") as f:
+    bg_base64 = base64.b64encode(f.read()).decode()
 
 st.markdown(f"""
 <style>
-/* Main app background */
+/* App background & dark theme */
 .stApp {{
   background: url("data:image/png;base64,{bg_base64}") no-repeat center center fixed;
   background-size: cover;
   background-color: #0e1525 !important;
   color: #fff !important;
 }}
-
-/* Remove Streamlit default grey and white panels */
-.block-container {{
+.block-container, header, .st-emotion-cache-18ni7ap, .st-emotion-cache-1v0mbdj {{
   background: transparent !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
 }}
-
-/* Sidebar styling (solid dark, no overlay) */
+/* Sidebar clean dark */
 [data-testid="stSidebar"] {{
   background: rgba(10,15,25,1) !important;
   color: #fff !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
 }}
-
-/* Sidebar inner panel fix */
 [data-testid="stSidebar"] > div:first-child {{
   background: transparent !important;
 }}
 
-/* Remove grey panel from headers, expander, and columns */
-header, .st-emotion-cache-18ni7ap, .st-emotion-cache-1v0mbdj {{
-  background: transparent !important;
-  box-shadow: none !important;
-}}
-
-/* NEW: compact phase layout */
+/* Phase container styling */
 .phase-box {{ padding: .25rem .35rem .6rem .35rem; border-radius: 10px; }}
 .phase-title {{ margin: 0 0 .25rem 0; font-weight: 700; font-size: 1.05rem; }}
-.phase-sub   {{ margin: 0 0 .5rem 0; font-size: .85rem; opacity: .85; }}
 .hr-compact  {{ margin: 0.6rem 0 1rem 0; border: 0; height: 1px; background: rgba(255,255,255,.15); }}
 .badge {{
   display:inline-block; padding:.15rem .45rem; margin-left:.35rem;
   border-radius: 999px; font-size:.75rem; background:rgba(255,255,255,.12);
 }}
+
+/* Card + Flip */
+.card-container {{ perspective: 1000px; }}
+.card {{ width: 100%; aspect-ratio: 2 / 3; position: relative; }}
+.card-inner {{
+  position: absolute; width: 100%; height: 100%;
+  transform-style: preserve-3d; transition: transform 0.6s ease;
+}}
+.flipped .card-inner {{ transform: rotateY(180deg); }}
+.card-face {{ position: absolute; width: 100%; height: 100%;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+  border-radius: 12px; overflow: hidden; }}
+.card-front {{ transform: rotateY(0deg); }}
+.card-back  {{ transform: rotateY(180deg); }}
+.img-fit {{ width: 100%; height: 100%; object-fit: cover; }}
+
+/* Zoom overlay (CSS-only modal) */
+.overlay {{
+  position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2147483646; pointer-events: none;
+}}
+.overlay .cardwrap {{
+  max-width: min(90vw, 900px);     /* wider */
+  transform: scale(1.25);          /* +25% zoom */
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  pointer-events: auto;
+}}
+.overlay img {{ width: 100%; height: auto; display:block; }}
+
+/* Floating close button on stage */
+.closebar {{
+  position: fixed; bottom: 18px; left: 18px;
+  z-index: 2147483647;
+}}
+.closebar .stButton > button {{
+  position: relative; font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+}}
 </style>
 """, unsafe_allow_html=True)
 
-import base64, io
-from PIL import Image
-import streamlit as st
+# ---------- Cards (now 20% smaller on board) ----------
+CARD_W, CARD_H = 288, 432   # 360x540 * 0.8
 
-def _b64_bg(path: str) -> str:
-    img = Image.open(path).convert("RGB")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    return base64.b64encode(buf.getvalue()).decode()
-
-# choose one: "cover" (hero) or "repeat-y" (tactile vertical)
-BG_MODE = st.session_state.get("BG_MODE", "cover")  # or set in sidebar later
-BG_B64 = _b64_bg("BG.png")
-
-if BG_MODE == "cover":
-    # Fullscreen responsive hero image, fixed for subtle parallax
-    st.markdown(f"""
-    <style>
-    [data-testid="stAppViewContainer"] {{
-      background-image: url("data:image/png;base64,{BG_B64}");
-      background-size: cover;
-      background-position: center center;
-      background-repeat: no-repeat;
-      background-attachment: fixed;
-    }}
-    /* Sidebar can be tinted to maintain readability (optional) */
-    [data-testid="stSidebar"] > div:first-child {{
-      backdrop-filter: blur(2px);
-      background: rgba(255,255,255,0.70);
-    }}
-    /* Main content readability layer (optional, subtle) */
-    .block-container {{
-      background: rgba(255,255,255,0.70);
-      border-radius: 12px;
-      padding: 1rem 1.25rem;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-else:
-    # Tactile vertical pattern (repeat-y), fixed width, centered
-    st.markdown(f"""
-    <style>
-    [data-testid="stAppViewContainer"] {{
-      background-image: url("data:image/png;base64,{BG_B64}");
-      background-repeat: repeat-y;
-      background-position: top center;
-      background-size: 1920px auto;   /* lock width, keep aspect */
-      background-attachment: scroll;  /* follow page scroll */
-    }}
-    [data-testid="stSidebar"] > div:first-child {{
-      backdrop-filter: blur(2px);
-      background: rgba(255,255,255,0.75);
-    }}
-    .block-container {{
-      background: rgba(255,255,255,0.78);
-      border-radius: 12px;
-      padding: 1rem 1.25rem;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-# --------------------- layout / style ---------------------
-CARD_W, CARD_H = 360, 540  # size used for generated PNGs
 TEAMS = ["Team A", "Team B"]
 
 PHASES = {
@@ -132,7 +101,6 @@ PHASES = {
     "Phase 4 – Post-Incident": ["Q10", "Q11", "Q12"],
 }
 
-# One-line prompts (replace with your real injects later)
 STORY = {
     "Q1":  "Strategic: Activate CIRP immediately?",
     "Q2":  "Tactical: First containment action?",
@@ -148,7 +116,6 @@ STORY = {
     "Q12": "Wildcard: Chaos card / random constraint",
 }
 
-# --------------------- image generation ---------------------
 def get_font(size: int):
     try:
         return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
@@ -172,10 +139,10 @@ def draw_front(label: str, subtitle: str) -> Image.Image:
     d = ImageDraw.Draw(img)
     d.rectangle([0, int(CARD_H*0.16), CARD_W, int(CARD_H*0.19)], fill=STRIPE)
     d.rectangle([0, int(CARD_H*0.72), CARD_W, int(CARD_H*0.75)], fill=STRIPE)
-    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=get_font(72))
+    d.text((CARD_W//2, int(CARD_H*0.30)), label, anchor="mm", fill=LIGHT, font=get_font(68))
     wrapped = textwrap.fill(subtitle, width=22)
     d.multiline_text((CARD_W//2, int(CARD_H*0.55)), wrapped, anchor="mm",
-                     fill=LIGHT, font=get_font(26), align="center")
+                     fill=LIGHT, font=get_font(24), align="center")
     img = ImageOps.expand(img, border=8, fill=(240,244,252))
     img = ImageOps.expand(img, border=3, fill=(220,226,236))
     return img
@@ -185,7 +152,7 @@ def pil_to_b64(img) -> str:
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
-# --------------------- state init ---------------------
+# ---------- State ----------
 def init():
     if "cards" in st.session_state:
         return
@@ -201,7 +168,7 @@ def init():
                 "front": pil_to_b64(draw_front(qid, STORY.get(qid, ""))),
                 "back": back_b64,
                 "flipped": False,
-                "owner": None,  # Team A / Team B
+                "owner": None,
             })
         cards[ph] = phase_cards
     st.session_state.cards = cards
@@ -211,7 +178,7 @@ def init():
 
 init()
 
-# --------------------- admin & helpers ---------------------
+# ---------- Admin / helpers ----------
 def reset_all():
     st.session_state.pop("cards", None)
     init()
@@ -245,63 +212,17 @@ def toggle_zoom(phase_name: str, idx: int):
 def close_zoom():
     st.session_state.zoom = None
 
-# --------------------- CSS for flip & overlay zoom (no JS) ---------------------
-st.markdown("""
-<style>
-.card-container { perspective: 1000px; }
-.card { width: 100%; aspect-ratio: 2 / 3; position: relative; }
-.card-inner {
-  position: absolute; width: 100%; height: 100%;
-  transform-style: preserve-3d; transition: transform 0.6s ease;
-}
-.flipped .card-inner { transform: rotateY(180deg); }
-.card-face { position: absolute; width: 100%; height: 100%;
-  -webkit-backface-visibility: hidden; backface-visibility: hidden;
-  border-radius: 12px; overflow: hidden; }
-.card-front { transform: rotateY(0deg); }
-.card-back  { transform: rotateY(180deg); }
-.img-fit { width: 100%; height: 100%; object-fit: cover; }
-
-/* Overlay that looks like a modal but uses CSS only */
-.overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.72);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 2147483646;
-  pointer-events: none;               /* background ignores clicks */
-}
-.overlay .cardwrap {
-  max-width: min(72vw, 760px);
-  border-radius: 16px; overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-  pointer-events: auto;               /* the card itself can accept clicks if needed */
-}
-.overlay img { width: 100%; height: auto; display:block; }
-
-/* Floating close button on stage */
-.closebar {
-  position: fixed; bottom: 18px; left: 18px;
-  z-index: 2147483647;               /* higher than overlay */
-}
-.closebar .stButton > button {
-  position: relative; font-weight: 700;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --------------------- SIDEBAR: Admin + Teams ---------------------
+# ---------- Sidebar ----------
 with st.sidebar:
     st.header("Admin / Demo Controls")
-
-    # Context-aware Close Zoom (only shows when zoom is active)
     if st.session_state.get("zoom") is not None:
         st.button("✕ Close Zoom (Admin)", on_click=close_zoom, type="primary", use_container_width=True)
-        st.caption("Visible only while a card is in zoom mode.")
+        st.caption("Visible only while a card is zoomed.")
         st.markdown("---")
 
     enforce_limit = st.checkbox("Enforce phase limit", value=True)
     limit_per_phase = st.number_input("Limit per phase (0 = unlimited)", min_value=0, max_value=3, value=2, step=1)
-    st.caption("Tip: set 0 or toggle off to allow opening the 3rd card for fun.")
+    st.caption("Tip: set 0 or toggle off to allow opening the 3rd card.")
 
     st.markdown("---")
     st.subheader("Per-Phase Override")
@@ -320,22 +241,19 @@ with st.sidebar:
     for t in TEAMS:
         st.write(f"- {t}: {st.session_state.score[t]}")
 
-# --------------------- MAIN: 2x2 Phases grid ---------------------
+# ---------- Main: 2×2 Grid of Phases ----------
 st.title("Phased TTX Card Deck (All Phases)")
-st.caption("Pick any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card to present it fullscreen.")
+st.caption("Flip any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card.")
 
 def render_phase(phase_name: str):
     pcs = st.session_state.cards[phase_name]
     picked = sum(c["flipped"] for c in pcs)
-
-    # Title + flipped counter badge
     limit_txt = f"{limit_per_phase if (enforce_limit and limit_per_phase>0) else '∞'}"
     st.markdown(
         f'<div class="phase-title">{phase_name} '
         f'<span class="badge">{picked}/{limit_txt}</span></div>',
         unsafe_allow_html=True
     )
-
     cols = st.columns(3, gap="small")
     for i, col in enumerate(cols):
         with col:
@@ -343,7 +261,6 @@ def render_phase(phase_name: str):
             front = f"data:image/png;base64,{card['front']}"
             back  = f"data:image/png;base64,{card['back']}"
             flipped_class = "flipped" if card["flipped"] else ""
-
             st.markdown(f"""
             <div class="card-container">
               <div class="card {flipped_class}">
@@ -358,7 +275,6 @@ def render_phase(phase_name: str):
               </div>
             </div>
             """, unsafe_allow_html=True)
-
             b1, b2 = st.columns(2, gap="small")
             with b1:
                 flip_disabled = card["flipped"] or not can_flip(
@@ -369,18 +285,16 @@ def render_phase(phase_name: str):
             with b2:
                 st.button("Zoom", key=f"zoom_{phase_name}_{i}", on_click=toggle_zoom,
                           args=(phase_name, i), disabled=not card["flipped"], use_container_width=True)
-
             if card["flipped"]:
                 st.caption(f"**{card['id']}** → {card['owner']}")
                 st.caption(STORY.get(card["id"], ""))
 
-# 2×2 matrix of phases
-row1 = st.columns(2)
+# 2×2 matrix
+row1 = st.columns(2, gap="large")
 with row1[0]:
     st.markdown('<div class="phase-box">', unsafe_allow_html=True)
     render_phase("Phase 1 – Detection & Analysis")
     st.markdown('</div>', unsafe_allow_html=True)
-
 with row1[1]:
     st.markdown('<div class="phase-box">', unsafe_allow_html=True)
     render_phase("Phase 2 – Containment & Eradication")
@@ -388,24 +302,21 @@ with row1[1]:
 
 st.markdown('<hr class="hr-compact">', unsafe_allow_html=True)
 
-row2 = st.columns(2)
+row2 = st.columns(2, gap="large")
 with row2[0]:
     st.markdown('<div class="phase-box">', unsafe_allow_html=True)
     render_phase("Phase 3 – Recovery")
     st.markdown('</div>', unsafe_allow_html=True)
-
 with row2[1]:
     st.markdown('<div class="phase-box">', unsafe_allow_html=True)
     render_phase("Phase 4 – Post-Incident")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --------------------- ZOOM OVERLAY (CSS-only; buttons to close) ---------------------
+# ---------- Zoom overlay ----------
 if st.session_state.zoom is not None:
     ph, idx = st.session_state.zoom
     card = st.session_state.cards[ph][idx]
     img_b64 = card["front"] if card["flipped"] else card["back"]
-
-    # Dark overlay + centered card (CSS only; background ignores clicks)
     st.markdown(f"""
     <div class="overlay">
       <div class="cardwrap">
@@ -413,8 +324,6 @@ if st.session_state.zoom is not None:
       </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # Bottom floating close button as a second safe control
     st.markdown('<div class="closebar">', unsafe_allow_html=True)
     st.button("✕ Close Zoom", on_click=close_zoom, type="primary")
     st.markdown('</div>', unsafe_allow_html=True)
