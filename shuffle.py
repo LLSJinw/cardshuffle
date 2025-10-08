@@ -9,27 +9,41 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
 
-BG_PATH = "BG.png"   # path to your 1920x1080 background
+BG_PATH = "BG.png"
 
-st.markdown(f"""
-<style>
-/* Remove default Streamlit grey background */
-.stApp {{
-  background: url("data:image/png;base64,{base64.b64encode(open(BG_PATH, "rb").read()).decode()}");
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-  color: #ffffff;
-}}
+st.markdown(
+    f"""
+    <style>
+    /* App background (no grey canvas) */
+    .stApp {{
+      background: url("data:image/png;base64,{base64.b64encode(open(BG_PATH, "rb").read()).decode()}");
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      color: #ffffff;
+    }}
 
-[data-testid="stSidebar"] > div:first-child {{
-  background: rgba(20,25,35,0.9);  /* keep sidebar dark, semi-opaque */
-}}
+    /* Make main content transparent so the BG shows through */
+    [data-testid="stAppViewContainer"] > .main .block-container {{
+      background: transparent !important;
+    }}
 
-.block-container {{
-  background: transparent !important;
-}}
-</style>
+    /* Sidebar: remove grey/white veil */
+    [data-testid="stSidebar"] {{
+      background: rgba(20,25,35,0.95) !important;  /* solid dark */
+      color: #fff !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+    }}
+
+    /* Remove inner grey panel */
+    [data-testid="stSidebar"] > div:first-child {{
+      background: transparent !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 [data-testid="stSidebar"] {
   background: rgba(20, 25, 35, 0.95) !important;  /* darker solid navy/black */
   color: #fff !important;
