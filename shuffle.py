@@ -1,5 +1,6 @@
 # streamlit_app.py
 # Phased TTX deck with two teams, flip/zoom, and admin controls for phase limits.
+# Production-safe zoom (CSS only) + Sidebar Close button (visible only when zoom is active)
 
 import base64, io, random, textwrap
 from typing import Dict, List, Tuple
@@ -19,7 +20,7 @@ PHASES = {
     "Phase 4 – Post-Incident": ["Q10", "Q11", "Q12"],
 }
 
-# one-line prompts (replace with your real injects later)
+# One-line prompts (replace with your real injects later)
 STORY = {
     "Q1":  "Strategic: Activate CIRP immediately?",
     "Q2":  "Tactical: First containment action?",
@@ -129,7 +130,10 @@ def flip_card(phase_name: str, idx: int):
 def toggle_zoom(phase_name: str, idx: int):
     st.session_state.zoom = None if st.session_state.zoom == (phase_name, idx) else (phase_name, idx)
 
-# --------------------- CSS for flip & zoom ---------------------
+def close_zoom():
+    st.session_state.zoom = None
+
+# --------------------- CSS for flip & overlay zoom (no JS) ---------------------
 st.markdown("""
 <style>
 .card-container { perspective: 1000px; }
@@ -146,16 +150,29 @@ st.markdown("""
 .card-back  { transform: rotateY(180deg); }
 .img-fit { width: 100%; height: 100%; object-fit: cover; }
 
-/* zoom overlay */
-.zoom-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-  display: flex; align-items: center; justify-content: center; z-index: 9999;
+/* Overlay that looks like a modal but uses CSS only */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2147483646;
+  pointer-events: none;               /* background ignores clicks */
 }
-.zoom-card { width: min(64vw, 680px); border-radius: 14px; overflow: hidden; }
-.zoom-close {
-  position: fixed; top: 22px; right: 26px; z-index: 10000;
-  background: #ffffff; color: #333; border: 0; padding: 10px 14px;
-  border-radius: 8px; cursor: pointer; font-weight: 600;
+.overlay .cardwrap {
+  max-width: min(72vw, 760px);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  pointer-events: auto;               /* the card itself can accept clicks if needed */
+}
+.overlay img { width: 100%; height: auto; display:block; }
+
+/* Floating close button on stage */
+.closebar {
+  position: fixed; bottom: 18px; left: 18px;
+  z-index: 2147483647;               /* higher than overlay */
+}
+.closebar .stButton > button {
+  position: relative; font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -163,6 +180,13 @@ st.markdown("""
 # --------------------- SIDEBAR: Admin + Teams ---------------------
 with st.sidebar:
     st.header("Admin / Demo Controls")
+
+    # Context-aware Close Zoom (only shows when zoom is active)
+    if st.session_state.get("zoom") is not None:
+        st.button("✕ Close Zoom (Admin)", on_click=close_zoom, type="primary", use_container_width=True)
+        st.caption("Visible only while a card is in zoom mode.")
+        st.markdown("---")
+
     enforce_limit = st.checkbox("Enforce phase limit", value=True)
     limit_per_phase = st.number_input("Limit per phase (0 = unlimited)", min_value=0, max_value=3, value=2, step=1)
     st.caption("Tip: set 0 or toggle off to allow opening the 3rd card for fun.")
@@ -236,43 +260,22 @@ for phase_name, ids in PHASES.items():
 
     st.markdown("---")
 
-# --------------------- ZOOM OVERLAY ---------------------
+# --------------------- ZOOM OVERLAY (CSS-only; buttons to close) ---------------------
 if st.session_state.zoom is not None:
     ph, idx = st.session_state.zoom
     card = st.session_state.cards[ph][idx]
     img_b64 = card["front"] if card["flipped"] else card["back"]
 
-    # Close button (always visible)
-    st.markdown("""
-    <button class="zoom-close" onclick="window.parent.postMessage('close-zoom', '*')">✕ Close</button>
-    """, unsafe_allow_html=True)
-
-    # Overlay that closes on click
+    # Dark overlay + centered card (CSS only; background ignores clicks)
     st.markdown(f"""
-    <div class="zoom-overlay" onclick="window.parent.postMessage('close-zoom', '*')">
-      <div class="zoom-card" onclick="event.stopPropagation()">
-        <img class="img-fit" src="data:image/png;base64,{img_b64}"/>
+    <div class="overlay">
+      <div class="cardwrap">
+        <img src="data:image/png;base64,{img_b64}" />
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-# JS: close on message + Esc
-st.markdown("""
-<script>
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') window.parent.postMessage('close-zoom', '*');
-});
-window.addEventListener("message", (event) => {
-  if (event.data === "close-zoom") {
-    const buttons = Array.from(parent.document.querySelectorAll('button'));
-    const closeBtn = buttons.find(b => b.innerText.trim() === 'Close' || b.innerText.includes('Close'));
-    if (closeBtn) closeBtn.click();
-  }
-});
-</script>
-""", unsafe_allow_html=True)
-
-# fallback Streamlit close button (programmatically clicked by JS)
-if st.session_state.zoom is not None:
-    ph, idx = st.session_state.zoom
-    st.button("Close", on_click=lambda: toggle_zoom(ph, idx), key="close_fallback", type="primary")
+    # Bottom floating close button as a second safe control
+    st.markdown('<div class="closebar">', unsafe_allow_html=True)
+    st.button("✕ Close Zoom", on_click=close_zoom, type="primary")
+    st.markdown('</div>', unsafe_allow_html=True)
