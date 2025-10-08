@@ -8,6 +8,29 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
+
+BG_PATH = "BG.png"   # path to your 1920x1080 background
+
+st.markdown(f"""
+<style>
+/* Remove default Streamlit grey background */
+.stApp {{
+  background: url("data:image/png;base64,{base64.b64encode(open(BG_PATH, "rb").read()).decode()}");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  color: #ffffff;
+}}
+
+[data-testid="stSidebar"] > div:first-child {{
+  background: rgba(20,25,35,0.9);  /* keep sidebar dark, semi-opaque */
+}}
+
+.block-container {{
+  background: transparent !important;
+}}
+</style>
+""", unsafe_allow_html=True)
 import base64, io
 from PIL import Image
 import streamlit as st
