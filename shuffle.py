@@ -106,7 +106,7 @@ st.markdown(f"""
 }}
 
 </style>
-"""<div class="title-bg">Phased TTX Card Deck (All Phases)</div>, unsafe_allow_html=True)
+"""'<div class="title-bg">Phased TTX Card Deck (All Phases)</div>', unsafe_allow_html=True)
 
 # ---------- Cards (now 20% smaller on board) ----------
 CARD_W, CARD_H = 288, 432   # 360x540 * 0.8
