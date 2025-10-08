@@ -30,6 +30,17 @@ st.markdown(f"""
   background: transparent !important;
 }}
 </style>
+[data-testid="stSidebar"] {
+  background: rgba(20, 25, 35, 0.95) !important;  /* darker solid navy/black */
+  color: #fff !important;
+  backdrop-filter: none !important; /* disable blur */
+  box-shadow: none !important; /* remove soft grey edge */
+}
+
+/* remove inner grey padding panels */
+[data-testid="stSidebar"] > div:first-child {
+  background: transparent !important;
+}
 """, unsafe_allow_html=True)
 import base64, io
 from PIL import Image
