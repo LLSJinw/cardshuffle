@@ -8,7 +8,66 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
+import base64, io
+from PIL import Image
+import streamlit as st
 
+def _b64_bg(path: str) -> str:
+    img = Image.open(path).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
+
+# choose one: "cover" (hero) or "repeat-y" (tactile vertical)
+BG_MODE = st.session_state.get("BG_MODE", "cover")  # or set in sidebar later
+BG_B64 = _b64_bg("BG.png")
+
+if BG_MODE == "cover":
+    # Fullscreen responsive hero image, fixed for subtle parallax
+    st.markdown(f"""
+    <style>
+    [data-testid="stAppViewContainer"] {{
+      background-image: url("data:image/png;base64,{BG_B64}");
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }}
+    /* Sidebar can be tinted to maintain readability (optional) */
+    [data-testid="stSidebar"] > div:first-child {{
+      backdrop-filter: blur(2px);
+      background: rgba(255,255,255,0.70);
+    }}
+    /* Main content readability layer (optional, subtle) */
+    .block-container {{
+      background: rgba(255,255,255,0.70);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+else:
+    # Tactile vertical pattern (repeat-y), fixed width, centered
+    st.markdown(f"""
+    <style>
+    [data-testid="stAppViewContainer"] {{
+      background-image: url("data:image/png;base64,{BG_B64}");
+      background-repeat: repeat-y;
+      background-position: top center;
+      background-size: 1920px auto;   /* lock width, keep aspect */
+      background-attachment: scroll;  /* follow page scroll */
+    }}
+    [data-testid="stSidebar"] > div:first-child {{
+      backdrop-filter: blur(2px);
+      background: rgba(255,255,255,0.75);
+    }}
+    .block-container {{
+      background: rgba(255,255,255,0.78);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 # --------------------- layout / style ---------------------
 CARD_W, CARD_H = 360, 540  # size used for generated PNGs
 TEAMS = ["Team A", "Team B"]
