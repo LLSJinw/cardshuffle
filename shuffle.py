@@ -320,26 +320,30 @@ with st.sidebar:
     for t in TEAMS:
         st.write(f"- {t}: {st.session_state.score[t]}")
 
-# --------------------- MAIN: Phases grid ---------------------
-st.title("Phased TTX Card Deck")
-st.caption("Flip any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card to present it fullscreen.")
+# --------------------- MAIN: 2x2 Phases grid ---------------------
+st.title("Phased TTX Card Deck (All Phases)")
+st.caption("Pick any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card to present it fullscreen.")
 
-for phase_name, ids in PHASES.items():
-    st.subheader(f"{phase_name}  ·  Pick {limit_per_phase if limit_per_phase>0 else '∞'} of 3")
+def render_phase(phase_name: str):
     pcs = st.session_state.cards[phase_name]
     picked = sum(c["flipped"] for c in pcs)
-    if enforce_limit and limit_per_phase > 0 and not phase_reveal_flags[phase_name]:
-        st.caption(f"Selected: {picked}/{limit_per_phase}")
-    else:
-        st.caption(f"Selected: {picked}/∞ (limit disabled)")
 
-    cols = st.columns(3)
+    # Title + flipped counter badge
+    limit_txt = f"{limit_per_phase if (enforce_limit and limit_per_phase>0) else '∞'}"
+    st.markdown(
+        f'<div class="phase-title">{phase_name} '
+        f'<span class="badge">{picked}/{limit_txt}</span></div>',
+        unsafe_allow_html=True
+    )
+
+    cols = st.columns(3, gap="small")
     for i, col in enumerate(cols):
         with col:
             card = pcs[i]
             front = f"data:image/png;base64,{card['front']}"
             back  = f"data:image/png;base64,{card['back']}"
             flipped_class = "flipped" if card["flipped"] else ""
+
             st.markdown(f"""
             <div class="card-container">
               <div class="card {flipped_class}">
@@ -355,22 +359,45 @@ for phase_name, ids in PHASES.items():
             </div>
             """, unsafe_allow_html=True)
 
-            btn_cols = st.columns(2)
-            with btn_cols[0]:
+            b1, b2 = st.columns(2, gap="small")
+            with b1:
                 flip_disabled = card["flipped"] or not can_flip(
                     phase_name, enforce_limit, limit_per_phase, phase_reveal_flags[phase_name]
                 )
                 st.button("Flip", key=f"flip_{phase_name}_{i}", on_click=flip_card,
                           args=(phase_name, i), disabled=flip_disabled, use_container_width=True)
-            with btn_cols[1]:
+            with b2:
                 st.button("Zoom", key=f"zoom_{phase_name}_{i}", on_click=toggle_zoom,
                           args=(phase_name, i), disabled=not card["flipped"], use_container_width=True)
 
             if card["flipped"]:
-                st.success(f"{card['id']} → {card['owner']}")
+                st.caption(f"**{card['id']}** → {card['owner']}")
                 st.caption(STORY.get(card["id"], ""))
 
-    st.markdown("---")
+# 2×2 matrix of phases
+row1 = st.columns(2)
+with row1[0]:
+    st.markdown('<div class="phase-box">', unsafe_allow_html=True)
+    render_phase("Phase 1 – Detection & Analysis")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with row1[1]:
+    st.markdown('<div class="phase-box">', unsafe_allow_html=True)
+    render_phase("Phase 2 – Containment & Eradication")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<hr class="hr-compact">', unsafe_allow_html=True)
+
+row2 = st.columns(2)
+with row2[0]:
+    st.markdown('<div class="phase-box">', unsafe_allow_html=True)
+    render_phase("Phase 3 – Recovery")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with row2[1]:
+    st.markdown('<div class="phase-box">', unsafe_allow_html=True)
+    render_phase("Phase 4 – Post-Incident")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --------------------- ZOOM OVERLAY (CSS-only; buttons to close) ---------------------
 if st.session_state.zoom is not None:
