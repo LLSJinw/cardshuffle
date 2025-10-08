@@ -120,21 +120,39 @@ def close_zoom():
 # ---------- CSS: overlay-feel ----------
 st.markdown("""
 <style>
+/* Overlay background – visible, but ignores clicks */
 .overlay {
-  position: fixed; inset:0; background: rgba(0,0,0,0.72);
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.72);
   display: flex; align-items: center; justify-content: center;
-  z-index: 9999;
+  z-index: 2147483646;           /* top, but still below the close button */
+  pointer-events: none;          /* <- do not eat clicks */
 }
+
+/* The card itself should accept clicks (e.g., for future expand controls) */
 .overlay .cardwrap {
   max-width: min(72vw, 760px);
   border-radius: 16px; overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  pointer-events: auto;          /* <- clickable */
 }
+
 .overlay img { width: 100%; height: auto; display:block; }
+
+/* Close button container – highest z-index and clickable */
 .closebar {
-  position: fixed; bottom: 18px; left: 18px; z-index: 10000;
+  position: fixed;
+  bottom: 18px; left: 18px;
+  z-index: 2147483647;           /* higher than overlay */
+  pointer-events: auto;          /* <- clickable */
 }
-.cardgrid img { border-radius: 12px; }
+
+/* Make the actual Streamlit button inside closebar fixed & obvious */
+.closebar .stButton > button {
+  position: relative;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+}
 </style>
 """, unsafe_allow_html=True)
 
