@@ -261,7 +261,7 @@ with st.sidebar:
         st.write(f"- {t}: {st.session_state.score[t]}")
 
 # ---------- Main: 2×2 Grid of Phases ----------
-st.title("Phased TTX Card Deck (All Phases)")
+
 st.caption("Flip any 2 of 3 per phase (unless admin disables the limit). Click **Zoom** on a flipped card.")
 
 def render_phase(phase_name: str):
