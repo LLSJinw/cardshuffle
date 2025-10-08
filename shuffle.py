@@ -40,7 +40,15 @@ st.markdown(f"""
 
 /* Phase container styling */
 .phase-box {{ padding: .25rem .35rem .6rem .35rem; border-radius: 10px; }}
-.phase-title {{ margin: 0 0 .25rem 0; font-weight: 700; font-size: 1.05rem; }}
+.phase-title {{  margin: 0 0 .25rem 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+  /* NEW: background behind the text */
+  background: rgba(0,0,0,.45);      /* dark translucent */
+  display: inline-block;            /* shrink to text width */
+  padding: .25rem .5rem;
+  border-radius: 8px;
+  line-height: 1.2; }}
 .hr-compact  {{ margin: 0.6rem 0 1rem 0; border: 0; height: 1px; background: rgba(255,255,255,.15); }}
 .badge {{
   display:inline-block; padding:.15rem .45rem; margin-left:.35rem;
