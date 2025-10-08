@@ -15,14 +15,11 @@ bg_base64 = base64.b64encode(bg_bytes).decode()
 
 st.markdown(f"""
 <style>
-
-
-
 /* Main app background */
 .stApp {{
   background: url("data:image/png;base64,{bg_base64}") no-repeat center center fixed;
   background-size: cover;
-  background-color: #0e1525 !important;  /* fallback dark navy */
+  background-color: #0e1525 !important;
   color: #fff !important;
 }}
 
@@ -35,7 +32,7 @@ st.markdown(f"""
 
 /* Sidebar styling (solid dark, no overlay) */
 [data-testid="stSidebar"] {{
-  background: rgba(10,15,25,1) !important;  /* solid dark navy */
+  background: rgba(10,15,25,1) !important;
   color: #fff !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -51,15 +48,16 @@ header, .st-emotion-cache-18ni7ap, .st-emotion-cache-1v0mbdj {{
   background: transparent !important;
   box-shadow: none !important;
 }}
-.phase-box { padding: .25rem .35rem .6rem .35rem; border-radius: 10px; }
-.phase-title { margin: 0 0 .25rem 0; font-weight: 700; font-size: 1.05rem; }
-.phase-sub   { margin: 0 0 .5rem 0; font-size: .85rem; opacity: .85; }
-.hr-compact { margin: 0.6rem 0 1rem 0; border: 0; height: 1px; background: rgba(255,255,255,.15); }
-.badge {
+
+/* NEW: compact phase layout */
+.phase-box {{ padding: .25rem .35rem .6rem .35rem; border-radius: 10px; }}
+.phase-title {{ margin: 0 0 .25rem 0; font-weight: 700; font-size: 1.05rem; }}
+.phase-sub   {{ margin: 0 0 .5rem 0; font-size: .85rem; opacity: .85; }}
+.hr-compact  {{ margin: 0.6rem 0 1rem 0; border: 0; height: 1px; background: rgba(255,255,255,.15); }}
+.badge {{
   display:inline-block; padding:.15rem .45rem; margin-left:.35rem;
   border-radius: 999px; font-size:.75rem; background:rgba(255,255,255,.12);
-}
-
+}}
 </style>
 """, unsafe_allow_html=True)
 
