@@ -9,41 +9,47 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
 
-BG_PATH = "BG.png"
+BG_PATH = "BG.png"  # your 1920x1080 file
+bg_bytes = open(BG_PATH, "rb").read()
+bg_base64 = base64.b64encode(bg_bytes).decode()
 
-st.markdown(
-    f"""
-    <style>
-    /* App background (no grey canvas) */
-    .stApp {{
-      background: url("data:image/png;base64,{base64.b64encode(open(BG_PATH, "rb").read()).decode()}");
-      background-size: cover;
-      background-position: center;
-      background-attachment: fixed;
-      color: #ffffff;
-    }}
+st.markdown(f"""
+<style>
+/* Main app background */
+.stApp {{
+  background: url("data:image/png;base64,{bg_base64}") no-repeat center center fixed;
+  background-size: cover;
+  background-color: #0e1525 !important;  /* fallback dark navy */
+  color: #fff !important;
+}}
 
-    /* Make main content transparent so the BG shows through */
-    [data-testid="stAppViewContainer"] > .main .block-container {{
-      background: transparent !important;
-    }}
+/* Remove Streamlit default grey and white panels */
+.block-container {{
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}}
 
-    /* Sidebar: remove grey/white veil */
-    [data-testid="stSidebar"] {{
-      background: rgba(20,25,35,0.95) !important;  /* solid dark */
-      color: #fff !important;
-      backdrop-filter: none !important;
-      box-shadow: none !important;
-    }}
+/* Sidebar styling (solid dark, no overlay) */
+[data-testid="stSidebar"] {{
+  background: rgba(10,15,25,1) !important;  /* solid dark navy */
+  color: #fff !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}}
 
-    /* Remove inner grey panel */
-    [data-testid="stSidebar"] > div:first-child {{
-      background: transparent !important;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+/* Sidebar inner panel fix */
+[data-testid="stSidebar"] > div:first-child {{
+  background: transparent !important;
+}}
+
+/* Remove grey panel from headers, expander, and columns */
+header, .st-emotion-cache-18ni7ap, .st-emotion-cache-1v0mbdj {{
+  background: transparent !important;
+  box-shadow: none !important;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 import base64, io
 from PIL import Image
