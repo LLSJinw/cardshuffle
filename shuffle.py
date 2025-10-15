@@ -179,6 +179,23 @@ def init():
     st.session_state.zoom=None
 init()
 
+
+with st.sidebar:
+    st.header("Admin / Drill Controls")
+
+    # NEW: show an exit-zoom button in the left panel when zoom is active
+    if st.session_state.get("zoom") is not None:
+        st.button("✕ Close Zoom (Admin)", on_click=close_zoom, type="primary", use_container_width=True)
+        st.caption("Visible only while a card is zoomed.")
+        st.markdown("---")
+
+    st.button("🔄 Reset All", on_click=reset_all, use_container_width=True)
+    st.markdown("---")
+    st.header("Teams & Score")
+    st.write(f"**Current Turn:** {TEAMS[st.session_state.turn]}")
+    for t in TEAMS:
+        st.write(f"- {t}: {st.session_state.score[t]}")
+
 # ---------- Helpers ----------
 def reset_all():
     st.session_state.pop("cards",None)
