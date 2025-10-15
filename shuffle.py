@@ -2,6 +2,15 @@
 # Phased TTX deck (2×2 grid), flip/zoom, admin controls.
 # Cards 20% smaller; Zoom ~25% bigger; clean dark UI with background.
 
+import os
+
+ASSET_DIR = "assets"  # folder that holds card01.png ... back.png
+
+def load_image_b64(filename: str) -> str:
+    """Utility: read an image file and return base64 string."""
+    path = os.path.join(ASSET_DIR, filename)
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("ascii")
 import base64, io, random, textwrap
 from typing import Dict, List, Tuple
 import streamlit as st
@@ -194,7 +203,7 @@ def pil_to_b64(img) -> str:
 def init():
     if "cards" in st.session_state:
         return
-    back_b64 = pil_to_b64(draw_card_back())
+    back_b64 = load_image_b64("back.png")
     cards: Dict[str, List[Dict]] = {}
     for ph, ids in PHASES.items():
         ids_pool = ids[:]
@@ -206,7 +215,12 @@ def init():
         for qid in chosen:
             phase_cards.append({
                 "id": qid,
-                "front": pil_to_b64(draw_front(qid, STORY.get(qid, ""))),
+                # Try to use real image if available; else draw placeholder
+img_filename = f"card{int(qid[1:]):02}.png"  # Q1→card01.png
+if os.path.exists(os.path.join(ASSET_DIR, img_filename)):
+    front_b64 = load_image_b64(img_filename)
+else:
+    front_b64 = pil_to_b64(draw_front(qid, STORY.get(qid, "")))
                 "back": back_b64,
                 "flipped": False,
                 "owner": None,
