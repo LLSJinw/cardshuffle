@@ -1,16 +1,9 @@
 # streamlit_app.py
 # Phased TTX deck (2×2 grid), flip/zoom, admin controls.
-# Cards 20% smaller; Zoom ~25% bigger; clean dark UI with background.
+# Real-drill: Phase1=3 cards; Phases2–4=2 cards each.
+# Supports real images under /assets; falls back to generated placeholders.
 
 import os
-
-ASSET_DIR = "assets"  # folder that holds card01.png ... back.png
-
-def load_image_b64(filename: str) -> str:
-    """Utility: read an image file and return base64 string."""
-    path = os.path.join(ASSET_DIR, filename)
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("ascii")
 import base64, io, random, textwrap
 from typing import Dict, List, Tuple
 import streamlit as st
@@ -18,12 +11,21 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 st.set_page_config(page_title="TTX Phased Deck", page_icon="🃏", layout="wide")
 
+# ---------- Assets ----------
+ASSET_DIR = "assets"  # holds back.png, card01.png, card02.png, ...
+
+def load_image_b64(filename: str) -> str:
+    """Read an image from assets and return base64 string."""
+    path = os.path.join(ASSET_DIR, filename)
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("ascii")
+
 # ---------- Background (1920x1080 recommended) ----------
 BG_PATH = "BG.png"
 with open(BG_PATH, "rb") as f:
     bg_base64 = base64.b64encode(f.read()).decode()
 
-# FIX stray quote & keep title style
+# CSS + Title (fix stray quote)
 st.markdown(f"""
 <style>
 /* App background & dark theme */
@@ -63,9 +65,8 @@ st.markdown(f"""
 .phase-title {{  margin: 0 0 .25rem 0;
   font-weight: 700;
   font-size: 1.05rem;
-  /* NEW: background behind the text */
-  background: rgba(0,0,0,.45);      /* dark translucent */
-  display: inline-block;            /* shrink to text width */
+  background: rgba(0,0,0,.45);
+  display: inline-block;
   padding: .25rem .5rem;
   border-radius: 8px;
   line-height: 1.2; }}
@@ -114,7 +115,6 @@ st.markdown(f"""
   position: relative; font-weight: 700;
   box-shadow: 0 6px 16px rgba(0,0,0,0.35);
 }}
-
 </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="title-bg">Phased TTX Card Deck (All Phases)</div>', unsafe_allow_html=True)
@@ -124,7 +124,7 @@ CARD_W, CARD_H = 288, 432   # 360x540 * 0.8
 
 TEAMS = ["Team A", "Team B"]
 
-# Pool (keep all Qs/What-Ifs here)
+# Phase pools (keep all Qs/What-Ifs here)
 PHASES = {
     "Phase 1 – Detection & Analysis": ["Q1", "Q2", "Q3"],
     "Phase 2 – Containment & Eradication": ["Q4", "Q5", "Q6"],
@@ -132,7 +132,7 @@ PHASES = {
     "Phase 4 – Post-Incident": ["Q10", "Q11", "Q12"],
 }
 
-# NEW: how many to DEAL per phase (3,2,2,2)
+# Deal counts per phase (3, 2, 2, 2)
 PHASE_DEAL_COUNT = {
     "Phase 1 – Detection & Analysis": 3,
     "Phase 2 – Containment & Eradication": 2,
@@ -140,7 +140,7 @@ PHASE_DEAL_COUNT = {
     "Phase 4 – Post-Incident": 2,
 }
 
-# NEW: per-phase FLIP LIMIT (3,2,2,2)
+# Flip limits per phase (3, 2, 2, 2)
 PHASE_FLIP_LIMIT = {
     "Phase 1 – Detection & Analysis": 3,
     "Phase 2 – Containment & Eradication": 2,
@@ -163,6 +163,7 @@ STORY = {
     "Q12": "Wildcard: Chaos card / random constraint",
 }
 
+# ---------- Fallback card drawing (used if an image is missing) ----------
 def get_font(size: int):
     try:
         return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
@@ -203,7 +204,13 @@ def pil_to_b64(img) -> str:
 def init():
     if "cards" in st.session_state:
         return
-    back_b64 = load_image_b64("back.png")
+
+    # Load back image (fallback to drawn back if missing)
+    try:
+        back_b64 = load_image_b64("back.png")
+    except Exception:
+        back_b64 = pil_to_b64(draw_card_back())
+
     cards: Dict[str, List[Dict]] = {}
     for ph, ids in PHASES.items():
         ids_pool = ids[:]
@@ -211,25 +218,40 @@ def init():
         # DEAL only 3 / 2 / 2 / 2 per phase
         deal_n = PHASE_DEAL_COUNT.get(ph, len(ids_pool))
         chosen = ids_pool[:deal_n]
+
         phase_cards = []
         for qid in chosen:
+            # Map Q-id like "Q7" -> "card07.png"
+            try:
+                qnum = int(qid[1:])
+            except ValueError:
+                qnum = 0  # safety; will fall back to placeholder
+            img_filename = f"card{qnum:02}.png"
+            img_path = os.path.join(ASSET_DIR, img_filename)
+
+            # Use real front if exists, else draw placeholder
+            if os.path.exists(img_path):
+                try:
+                    front_b64 = load_image_b64(img_filename)
+                except Exception:
+                    front_b64 = pil_to_b64(draw_front(qid, STORY.get(qid, "")))
+            else:
+                front_b64 = pil_to_b64(draw_front(qid, STORY.get(qid, "")))
+
             phase_cards.append({
                 "id": qid,
-                # Try to use real image if available; else draw placeholder
-img_filename = f"card{int(qid[1:]):02}.png"  # Q1→card01.png
-if os.path.exists(os.path.join(ASSET_DIR, img_filename)):
-    front_b64 = load_image_b64(img_filename)
-else:
-    front_b64 = pil_to_b64(draw_front(qid, STORY.get(qid, "")))
+                "front": front_b64,
                 "back": back_b64,
                 "flipped": False,
                 "owner": None,
             })
+
         cards[ph] = phase_cards
+
     st.session_state.cards = cards
     st.session_state.turn = 0
     st.session_state.score = {t: 0 for t in TEAMS}
-    st.session_state.zoom: Tuple[str,int] | None = None
+    st.session_state.zoom: Tuple[str, int] | None = None
 
 init()
 
@@ -276,7 +298,7 @@ def toggle_zoom(phase_name: str, idx: int):
 def close_zoom():
     st.session_state.zoom = None
 
-# ---------- Sidebar (unchanged content) ----------
+# ---------- Sidebar (old UI preserved) ----------
 with st.sidebar:
     st.header("Admin / Demo Controls")
     if st.session_state.get("zoom") is not None:
@@ -318,7 +340,7 @@ def render_phase(phase_name: str):
         f'<span class="badge">{picked}/{limit_txt}</span></div>',
         unsafe_allow_html=True
     )
-    # ADAPT column count to how many cards were dealt in this phase
+    # columns adapt to the number of dealt cards for this phase
     cols = st.columns(len(pcs), gap="small")
     for i, col in enumerate(cols):
         with col:
@@ -354,7 +376,7 @@ def render_phase(phase_name: str):
                 st.caption(f"**{card['id']}** → {card['owner']}")
                 st.caption(STORY.get(card["id"], ""))
 
-# 2×2 matrix
+# 2×2 matrix layout
 row1 = st.columns(2, gap="large")
 with row1[0]:
     st.markdown('<div class="phase-box">', unsafe_allow_html=True)
