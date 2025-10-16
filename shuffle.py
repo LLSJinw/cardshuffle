@@ -78,7 +78,12 @@ st.markdown(f"""
 
 /* Card + Flip */
 .card-container {{ perspective: 1000px; }}
-.card {{ width: 100%; aspect-ratio: 2 / 3; position: relative; }}
+.card {{
+  width: 288px;              /* <- fixed width */
+  height: 432px;             /* <- fixed height (2:3) */
+  margin: 0 auto;            /* center in its column */
+  position: relative;
+}}
 .card-inner {{
   position: absolute; width: 100%; height: 100%;
   transform-style: preserve-3d; transition: transform 0.6s ease;
@@ -99,7 +104,7 @@ st.markdown(f"""
 }}
 .overlay .cardwrap {{
   max-width: min(90vw, 900px);     /* wider */
-  transform: scale(2.00);          /* +25% zoom */
+  transform: scale(1.40);          /* +25% zoom */
   border-radius: 20px; overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
   pointer-events: auto;
