@@ -332,6 +332,29 @@ with st.sidebar:
     for t in TEAMS:
         st.write(f"- {t}: {st.session_state.score[t]}")
 
+    st.markdown("---")
+    st.header("🎲 Quick Random Assignment")
+
+    if st.button("Randomize Phase Assignment", use_container_width=True, type="primary"):
+        all_phases = list(PHASES.keys())
+        random.shuffle(all_phases)
+        # Split 4 phases → 2 for Team A, 2 for Team B
+        team_a_phases = all_phases[:2]
+        team_b_phases = all_phases[2:]
+        st.session_state["team_phase_map"] = {
+            "Team A": team_a_phases,
+            "Team B": team_b_phases
+        }
+
+    # Show current assignment (if any)
+    if "team_phase_map" in st.session_state:
+        st.subheader("Current Phase Assignment")
+        for team, phases in st.session_state["team_phase_map"].items():
+            st.write(f"**{team}:** {', '.join(phases)}")
+    else:
+        st.caption("Press the button above to randomly assign phases to each team.")
+
+
 # ---------- Main: 2×2 Grid of Phases ----------
 st.caption("Inject 1 flips up to 3 cards; Inject 2–4 flip up to 2. Click **Zoom** on a flipped card.")
 
