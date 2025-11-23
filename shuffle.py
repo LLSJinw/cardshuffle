@@ -1,6 +1,6 @@
 # streamlit_app.py
 # Phased TTX deck (2×2 grid), flip/zoom, admin controls.
-# Real-drill: Phase1=3 cards; Phases2–4=2 cards each.
+# NEW: Real-drill: all phases = 2 cards each (2,2,2,2).
 # Supports real images under /assets; falls back to generated placeholders.
 
 import os
@@ -25,7 +25,7 @@ BG_PATH = "BG.png"
 with open(BG_PATH, "rb") as f:
     bg_base64 = base64.b64encode(f.read()).decode()
 
-# CSS + Title (fix stray quote)
+# CSS + Title
 st.markdown(f"""
 <style>
 /* App background & dark theme */
@@ -37,11 +37,11 @@ st.markdown(f"""
 }}
 
 .title-bg {{
-  font-size: 1.8rem;                 /* similar to st.title */
+  font-size: 1.8rem;
   font-weight: 800;
   margin: .25rem 0 .35rem 0;
   display: inline-block;
-  background: rgba(0,0,0,.50);       /* dark translucent slab */
+  background: rgba(0,0,0,.50);
   padding: .35rem .65rem;
   border-radius: 10px;
 }}
@@ -62,14 +62,16 @@ st.markdown(f"""
 
 /* Phase container styling */
 .phase-box {{ padding: .25rem .35rem .6rem .35rem; border-radius: 10px; }}
-.phase-title {{  margin: 0 0 .25rem 0;
+.phase-title {{
+  margin: 0 0 .25rem 0;
   font-weight: 700;
   font-size: 1.05rem;
   background: rgba(0,0,0,.45);
   display: inline-block;
   padding: .25rem .5rem;
   border-radius: 8px;
-  line-height: 1.2; }}
+  line-height: 1.2;
+}}
 .hr-compact  {{ margin: 0.6rem 0 1rem 0; border: 0; height: 1px; background: rgba(255,255,255,.15); }}
 .badge {{
   display:inline-block; padding:.15rem .45rem; margin-left:.35rem;
@@ -79,9 +81,9 @@ st.markdown(f"""
 /* Card + Flip */
 .card-container {{ perspective: 1000px; }}
 .card {{
-  width: 288px;              /* <- fixed width */
-  height: 432px;             /* <- fixed height (2:3) */
-  margin: 0 auto;            /* center in its column */
+  width: 288px;
+  height: 432px;
+  margin: 0 auto;
   position: relative;
 }}
 .card-inner {{
@@ -103,8 +105,8 @@ st.markdown(f"""
   z-index: 2147483646; pointer-events: none;
 }}
 .overlay .cardwrap {{
-  max-width: min(90vw, 900px);     /* wider */
-  transform: scale(1.00);          /* +25% zoom */
+  max-width: min(90vw, 900px);
+  transform: scale(1.00);
   border-radius: 20px; overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
   pointer-events: auto;
@@ -129,30 +131,31 @@ CARD_W, CARD_H = 288, 432   # 360x540 * 0.8
 
 TEAMS = ["Team A", "Team B"]
 
-# Phase pools (keep all Qs/What-Ifs here)
+# Phase pools (NOW ONLY 8 CARDS: Q1–Q8 → card01.png–card08.png)
 PHASES = {
-    "Phase 1 – Detection & Analysis": ["Q1", "Q2", "Q3"],
-    "Phase 2 – Containment & Eradication": ["Q4", "Q5", "Q6"],
-    "Phase 3 – Recovery": ["Q7", "Q8", "Q9"],
-    "Phase 4 – Post-Incident": ["Q10", "Q11", "Q12"],
+    "Phase 1 – Detection & Analysis": ["Q1", "Q2"],
+    "Phase 2 – Containment & Eradication": ["Q3", "Q4"],
+    "Phase 3 – Recovery": ["Q5", "Q6"],
+    "Phase 4 – Post-Incident": ["Q7", "Q8"],
 }
 
-# Deal counts per phase (3, 2, 2, 2)
+# Deal counts per phase (2, 2, 2, 2)
 PHASE_DEAL_COUNT = {
-    "Phase 1 – Detection & Analysis": 3,
+    "Phase 1 – Detection & Analysis": 2,
     "Phase 2 – Containment & Eradication": 2,
     "Phase 3 – Recovery": 2,
     "Phase 4 – Post-Incident": 2,
 }
 
-# Flip limits per phase (3, 2, 2, 2)
+# Flip limits per phase (2, 2, 2, 2)
 PHASE_FLIP_LIMIT = {
-    "Phase 1 – Detection & Analysis": 3,
+    "Phase 1 – Detection & Analysis": 2,
     "Phase 2 – Containment & Eradication": 2,
     "Phase 3 – Recovery": 2,
     "Phase 4 – Post-Incident": 2,
 }
 
+# Only Q1–Q8 are used now
 STORY = {
     "Q1":  "Strategic: Activate CIRP immediately?",
     "Q2":  "Tactical: First containment action?",
@@ -162,10 +165,6 @@ STORY = {
     "Q6":  "Operational: Contact-center message?",
     "Q7":  "Strategic: Ransom stance (LE & backups)?",
     "Q8":  "Tactical: Verify backup integrity first?",
-    "Q9":  "Operational: Staff breach notice?",
-    "Q10": "Strategic: Improve CIRP + BCP?",
-    "Q11": "Tactical: Backup test + EDR + awareness?",
-    "Q12": "Wildcard: Chaos card / random constraint",
 }
 
 # ---------- Fallback card drawing (used if an image is missing) ----------
@@ -220,13 +219,13 @@ def init():
     for ph, ids in PHASES.items():
         ids_pool = ids[:]
         random.shuffle(ids_pool)
-        # DEAL only 3 / 2 / 2 / 2 per phase
+        # DEAL only 2 / 2 / 2 / 2 per phase
         deal_n = PHASE_DEAL_COUNT.get(ph, len(ids_pool))
         chosen = ids_pool[:deal_n]
 
         phase_cards = []
         for qid in chosen:
-            # Map Q-id like "Q7" -> "card07.png"
+            # Map Q-id like "Q3" -> "card03.png" (only 01–08 exist)
             try:
                 qnum = int(qid[1:])
             except ValueError:
@@ -273,7 +272,7 @@ def shuffle_unflipped_in_phase(phase_name: str):
     st.session_state.cards[phase_name] = flipped + unflipped
 
 def phase_effective_limit(phase_name: str, enforce: bool, global_limit: int) -> int:
-    """Respect old sidebar controls but enforce 3/2/2/2 when 'enforce' is True."""
+    """Respect old sidebar controls but enforce 2/2/2/2 when 'enforce' is True."""
     if not enforce:
         return 0  # unlimited
     return PHASE_FLIP_LIMIT.get(phase_name, global_limit or 0)
@@ -312,8 +311,9 @@ with st.sidebar:
         st.markdown("---")
 
     enforce_limit = st.checkbox("Enforce phase limit", value=True)
-    limit_per_phase = st.number_input("Limit per phase (0 = unlimited)", min_value=0, max_value=3, value=2, step=1)
-    st.caption("Tip: set 0 or toggle off to allow opening the 3rd card.")
+    # Max 2 is enough now that each phase only has 2 cards
+    limit_per_phase = st.number_input("Limit per phase (0 = unlimited)", min_value=0, max_value=2, value=2, step=1)
+    st.caption("Tip: set 0 or toggle off to allow opening all cards freely.")
 
     st.markdown("---")
     st.subheader("Per-Phase Override")
@@ -354,9 +354,8 @@ with st.sidebar:
     else:
         st.caption("Press the button above to randomly assign phases to each team.")
 
-
 # ---------- Main: 2×2 Grid of Phases ----------
-st.caption("Inject 1 flips up to 3 cards; Inject 2–4 flip up to 2. Click **Zoom** on a flipped card.")
+st.caption("Each inject flips up to 2 cards per phase. Click **Zoom** on a flipped card.")
 
 def render_phase(phase_name: str):
     pcs = st.session_state.cards[phase_name]
